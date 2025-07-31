@@ -1,5 +1,6 @@
 import { ToolId } from '@/types/editor';
 import { floodFill, hexToRgb, gaussianBlur, sharpen, denoise, adjustBrightnessContrast, toGrayscale } from './imageProcessing';
+import { TextTool } from './textTool';
 
 export interface ToolHandler {
   onActivate: (canvas: HTMLCanvasElement) => void;

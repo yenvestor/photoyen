@@ -1,6 +1,6 @@
 export type ToolId = 
   | 'move'
-  | 'rectangle-select' | 'ellipse-select'
+  | 'rectangle-select' | 'ellipse-select' | 'lasso-select'
   | 'magic-wand' | 'quick-selection' | 'object-selection'
   | 'crop'
   | 'eyedropper' | 'color-sampler' | 'ruler'

@@ -63,7 +63,7 @@ export function useCanvas() {
     // Use tool handlers for mouse down
     const toolId = activeTool as ToolId;
     if (toolHandlers[toolId]?.onMouseDown) {
-      toolHandlers[toolId].onMouseDown!(mouseEvent, canvas);
+      toolHandlers[toolId].onMouseDown!(mouseEvent, canvas, toolOptions);
     }
   };
 
@@ -76,7 +76,7 @@ export function useCanvas() {
     // Use tool handlers for mouse move (both drawing and hovering)
     const toolId = activeTool as ToolId;
     if (toolHandlers[toolId]?.onMouseMove) {
-      toolHandlers[toolId].onMouseMove!(mouseEvent, canvas);
+      toolHandlers[toolId].onMouseMove!(mouseEvent, canvas, toolOptions);
     }
   };
 
@@ -91,7 +91,7 @@ export function useCanvas() {
     // Use tool handlers for mouse up
     const toolId = activeTool as ToolId;
     if (toolHandlers[toolId]?.onMouseUp) {
-      toolHandlers[toolId].onMouseUp!(mouseEvent, canvas);
+      toolHandlers[toolId].onMouseUp!(mouseEvent, canvas, toolOptions);
     }
   };
 

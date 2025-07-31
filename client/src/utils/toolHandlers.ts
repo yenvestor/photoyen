@@ -1,11 +1,13 @@
 import { ToolId } from '@/types/editor';
+import { floodFill, hexToRgb, gaussianBlur, sharpen, denoise, adjustBrightnessContrast, toGrayscale } from './imageProcessing';
+import { TextTool } from './textTool';
 
 export interface ToolHandler {
   onActivate: (canvas: HTMLCanvasElement) => void;
   onDeactivate: (canvas: HTMLCanvasElement) => void;
-  onMouseDown?: (event: MouseEvent, canvas: HTMLCanvasElement) => void;
-  onMouseMove?: (event: MouseEvent, canvas: HTMLCanvasElement) => void;
-  onMouseUp?: (event: MouseEvent, canvas: HTMLCanvasElement) => void;
+  onMouseDown?: (event: MouseEvent, canvas: HTMLCanvasElement, toolOptions?: any) => void;
+  onMouseMove?: (event: MouseEvent, canvas: HTMLCanvasElement, toolOptions?: any) => void;
+  onMouseUp?: (event: MouseEvent, canvas: HTMLCanvasElement, toolOptions?: any) => void;
   onKeyDown?: (event: KeyboardEvent) => void;
 }
 
@@ -18,6 +20,7 @@ export const TOOL_NAMES: Record<ToolId, string> = {
   // Selection tools
   'rectangle-select': 'Rectangle Select Tool',
   'ellipse-select': 'Ellipse Select Tool',
+  'lasso-select': 'Lasso Select Tool',
   'magic-wand': 'Magic Wand Tool',
   'quick-selection': 'Quick Selection Tool',
   'object-selection': 'Object Selection Tool',
@@ -599,6 +602,111 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     },
   },
   
+  'lasso-select': {
+    onActivate: (canvas) => {
+      canvas.style.cursor = 'crosshair';
+    },
+    onDeactivate: (canvas) => {
+      canvas.style.cursor = 'default';
+      // Clear any selection overlay
+      const overlay = canvas.parentElement?.querySelector('.selection-overlay') as HTMLCanvasElement;
+      if (overlay) overlay.remove();
+    },
+    onMouseDown: (event, canvas) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      canvas.dataset.selecting = 'true';
+      canvas.dataset.lassoPath = JSON.stringify([{ x, y }]);
+      
+      // Create overlay canvas for selection visualization
+      let overlay = canvas.parentElement?.querySelector('.selection-overlay') as HTMLCanvasElement;
+      if (!overlay) {
+        overlay = document.createElement('canvas');
+        overlay.className = 'selection-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.pointerEvents = 'none';
+        overlay.style.zIndex = '10';
+        overlay.width = canvas.width;
+        overlay.height = canvas.height;
+        canvas.parentElement?.appendChild(overlay);
+      }
+      
+      console.log('Lasso select: starting at', { x, y });
+    },
+    onMouseMove: (event, canvas) => {
+      if (canvas.dataset.selecting !== 'true') return;
+      
+      const overlay = canvas.parentElement?.querySelector('.selection-overlay') as HTMLCanvasElement;
+      if (!overlay) return;
+      
+      const overlayCtx = overlay.getContext('2d');
+      if (!overlayCtx) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      // Get current path
+      const pathData = JSON.parse(canvas.dataset.lassoPath || '[]');
+      pathData.push({ x, y });
+      canvas.dataset.lassoPath = JSON.stringify(pathData);
+      
+      // Draw the lasso path
+      overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+      overlayCtx.strokeStyle = '#007ACC';
+      overlayCtx.lineWidth = 1;
+      overlayCtx.setLineDash([3, 3]);
+      
+      overlayCtx.beginPath();
+      overlayCtx.moveTo(pathData[0].x, pathData[0].y);
+      for (let i = 1; i < pathData.length; i++) {
+        overlayCtx.lineTo(pathData[i].x, pathData[i].y);
+      }
+      overlayCtx.stroke();
+      overlayCtx.setLineDash([]);
+    },
+    onMouseUp: (event, canvas) => {
+      if (canvas.dataset.selecting !== 'true') return;
+      
+      const pathData = JSON.parse(canvas.dataset.lassoPath || '[]');
+      
+      if (pathData.length > 3) {
+        // Close the path and create selection
+        const overlay = canvas.parentElement?.querySelector('.selection-overlay') as HTMLCanvasElement;
+        if (overlay) {
+          const overlayCtx = overlay.getContext('2d');
+          if (overlayCtx) {
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+            overlayCtx.strokeStyle = '#007ACC';
+            overlayCtx.lineWidth = 1;
+            overlayCtx.setLineDash([3, 3]);
+            
+            // Draw closed path
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(pathData[0].x, pathData[0].y);
+            for (let i = 1; i < pathData.length; i++) {
+              overlayCtx.lineTo(pathData[i].x, pathData[i].y);
+            }
+            overlayCtx.closePath();
+            overlayCtx.stroke();
+            
+            // Store selection data for other tools
+            canvas.dataset.hasSelection = 'true';
+            canvas.dataset.selectionPath = JSON.stringify(pathData);
+          }
+        }
+        
+        console.log('Lasso select: completed with', pathData.length, 'points');
+      }
+      
+      canvas.dataset.selecting = 'false';
+    },
+  },
+  
   // Transformation tools
   'crop': {
     onActivate: (canvas) => {
@@ -754,7 +862,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
     },
-    onMouseDown: (event, canvas) => {
+    onMouseDown: (event, canvas, toolOptions) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
@@ -762,16 +870,48 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
+      // Get tool options with defaults
+      const size = toolOptions?.brushSize || 20;
+      const opacity = toolOptions?.opacity || 100;
+      const hardness = toolOptions?.hardness || 100;
+      const blendMode = toolOptions?.blendMode || 'normal';
+      
+      // Get foreground color from color picker
+      const colorPicker = document.querySelector('.foreground-color') as HTMLElement;
+      const color = colorPicker?.style.backgroundColor || '#000000';
+      
+      ctx.save();
+      ctx.globalAlpha = opacity / 100;
+      ctx.globalCompositeOperation = blendMode === 'normal' ? 'source-over' : blendMode;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineWidth = 20; // Default brush size
+      ctx.lineWidth = size;
       ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000000'; // Default black color
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = color;
+      
+      // Apply hardness by creating gradient if needed
+      if (hardness < 100) {
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, size / 2);
+        const alpha = hardness / 100;
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(alpha, color);
+        gradient.addColorStop(1, 'transparent');
+        ctx.strokeStyle = gradient;
+      }
       
       canvas.dataset.drawing = 'true';
-      console.log('Brush: starting stroke at', { x, y });
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
+      
+      // Draw initial dot
+      ctx.beginPath();
+      ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      console.log('Brush: starting stroke at', { x, y, size, opacity, hardness });
     },
-    onMouseMove: (event, canvas) => {
+    onMouseMove: (event, canvas, toolOptions) => {
       if (canvas.dataset.drawing !== 'true') return;
       
       const ctx = canvas.getContext('2d');
@@ -780,11 +920,36 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const lastX = parseFloat(canvas.dataset.lastX || '0');
+      const lastY = parseFloat(canvas.dataset.lastY || '0');
       
+      // Get tool options
+      const size = toolOptions?.brushSize || 20;
+      const opacity = toolOptions?.opacity || 100;
+      const flow = toolOptions?.flow || 100;
+      
+      ctx.save();
+      ctx.globalAlpha = (opacity * flow) / 10000; // Combine opacity and flow
+      ctx.lineWidth = size;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
       ctx.lineTo(x, y);
       ctx.stroke();
+      
+      // Update last position
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
+      
+      ctx.restore();
     },
     onMouseUp: (event, canvas) => {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.restore(); // Restore context state
+      }
       canvas.dataset.drawing = 'false';
       console.log('Brush: ending stroke');
     },
@@ -797,7 +962,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
     },
-    onMouseDown: (event, canvas) => {
+    onMouseDown: (event, canvas, toolOptions) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
@@ -805,16 +970,29 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
+      // Get tool options with defaults
+      const size = Math.max(1, (toolOptions?.brushSize || 20) / 10); // Pencil is thinner
+      const opacity = toolOptions?.opacity || 100;
+      
+      // Get foreground color from color picker
+      const colorPicker = document.querySelector('.foreground-color') as HTMLElement;
+      const color = colorPicker?.style.backgroundColor || '#000000';
+      
+      ctx.save();
+      ctx.globalAlpha = opacity / 100;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineWidth = 2; // Thin pencil line
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000000';
+      ctx.lineWidth = size;
+      ctx.lineCap = 'square'; // Sharp pencil edge
+      ctx.strokeStyle = color;
       
       canvas.dataset.drawing = 'true';
-      console.log('Pencil: starting stroke at', { x, y });
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
+      
+      console.log('Pencil: starting stroke at', { x, y, size, opacity });
     },
-    onMouseMove: (event, canvas) => {
+    onMouseMove: (event, canvas, toolOptions) => {
       if (canvas.dataset.drawing !== 'true') return;
       
       const ctx = canvas.getContext('2d');
@@ -823,11 +1001,23 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const lastX = parseFloat(canvas.dataset.lastX || '0');
+      const lastY = parseFloat(canvas.dataset.lastY || '0');
       
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
       ctx.lineTo(x, y);
       ctx.stroke();
+      
+      // Update last position
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
     },
     onMouseUp: (event, canvas) => {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.restore();
+      }
       canvas.dataset.drawing = 'false';
       console.log('Pencil: ending stroke');
     },
@@ -848,10 +1038,77 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     },
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
+      // Clear clone source indicator
+      const indicator = document.querySelector('.clone-source-indicator');
+      if (indicator) indicator.remove();
     },
-    onMouseDown: (event, canvas) => {
-      // Clone/stamp operation
-      console.log('Clone: stamping', event);
+    onMouseDown: (event, canvas, toolOptions) => {
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      
+      // Get tool options
+      const size = toolOptions?.brushSize || 50;
+      const opacity = toolOptions?.opacity || 100;
+      
+      if (event.altKey) {
+        // Alt+click to set clone source
+        canvas.dataset.cloneSourceX = x.toString();
+        canvas.dataset.cloneSourceY = y.toString();
+        
+        // Show visual indicator for clone source
+        const indicator = document.createElement('div');
+        indicator.className = 'clone-source-indicator';
+        indicator.style.position = 'absolute';
+        indicator.style.left = `${rect.left + x - 10}px`;
+        indicator.style.top = `${rect.top + y - 10}px`;
+        indicator.style.width = '20px';
+        indicator.style.height = '20px';
+        indicator.style.border = '2px solid #00ff00';
+        indicator.style.borderRadius = '50%';
+        indicator.style.pointerEvents = 'none';
+        indicator.style.zIndex = '1000';
+        document.body.appendChild(indicator);
+        
+        console.log('Clone: source set at', { x, y });
+        return;
+      }
+      
+      // Regular clone operation
+      const sourceX = parseFloat(canvas.dataset.cloneSourceX || '0');
+      const sourceY = parseFloat(canvas.dataset.cloneSourceY || '0');
+      
+      if (!canvas.dataset.cloneSourceX) {
+        console.log('Clone: no source set - use Alt+click to set source');
+        return;
+      }
+      
+      try {
+        // Sample from source location
+        const sourceData = ctx.getImageData(
+          Math.max(0, sourceX - size/2), 
+          Math.max(0, sourceY - size/2),
+          Math.min(size, canvas.width - Math.max(0, sourceX - size/2)),
+          Math.min(size, canvas.height - Math.max(0, sourceY - size/2))
+        );
+        
+        // Apply to destination with opacity
+        ctx.save();
+        ctx.globalAlpha = opacity / 100;
+        ctx.putImageData(
+          sourceData, 
+          x - size/2, 
+          y - size/2
+        );
+        ctx.restore();
+        
+        console.log('Clone: applied from', { sourceX, sourceY }, 'to', { x, y });
+      } catch (e) {
+        console.error('Clone error:', e);
+      }
     },
   },
   
@@ -862,7 +1119,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
     },
-    onMouseDown: (event, canvas) => {
+    onMouseDown: (event, canvas, toolOptions) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
@@ -870,16 +1127,30 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
+      // Get tool options with defaults
+      const size = toolOptions?.brushSize || 30;
+      const opacity = toolOptions?.opacity || 100;
+      
+      ctx.save();
       ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = opacity / 100;
       ctx.beginPath();
       ctx.moveTo(x, y);
-      ctx.lineWidth = 30; // Eraser size
+      ctx.lineWidth = size;
       ctx.lineCap = 'round';
       
       canvas.dataset.drawing = 'true';
-      console.log('Eraser: starting erase at', { x, y });
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
+      
+      // Draw initial erase dot
+      ctx.beginPath();
+      ctx.arc(x, y, size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      
+      console.log('Eraser: starting erase at', { x, y, size, opacity });
     },
-    onMouseMove: (event, canvas) => {
+    onMouseMove: (event, canvas, toolOptions) => {
       if (canvas.dataset.drawing !== 'true') return;
       
       const ctx = canvas.getContext('2d');
@@ -888,14 +1159,22 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const rect = canvas.getBoundingClientRect();
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
+      const lastX = parseFloat(canvas.dataset.lastX || '0');
+      const lastY = parseFloat(canvas.dataset.lastY || '0');
       
+      ctx.beginPath();
+      ctx.moveTo(lastX, lastY);
       ctx.lineTo(x, y);
       ctx.stroke();
+      
+      // Update last position
+      canvas.dataset.lastX = x.toString();
+      canvas.dataset.lastY = y.toString();
     },
     onMouseUp: (event, canvas) => {
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.globalCompositeOperation = 'source-over'; // Reset to normal
+        ctx.restore(); // This will reset globalCompositeOperation
       }
       canvas.dataset.drawing = 'false';
       console.log('Eraser: ending erase');
@@ -1048,7 +1327,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
     },
-    onMouseDown: (event, canvas) => {
+    onMouseDown: (event, canvas, toolOptions) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
@@ -1056,53 +1335,52 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
-      // Apply proper blur effect 
-      const radius = 30;
+      // Get tool options
+      const brushSize = toolOptions?.brushSize || 50;
+      const intensity = (toolOptions?.opacity || 50) / 100;
+      
+      const radius = Math.max(brushSize, 20);
+      
       try {
         // Get the image data for the area to blur
-        const imageData = ctx.getImageData(x - radius, y - radius, radius * 2, radius * 2);
-        const data = imageData.data;
+        const imageData = ctx.getImageData(
+          Math.max(0, x - radius), 
+          Math.max(0, y - radius), 
+          Math.min(radius * 2, canvas.width - Math.max(0, x - radius)), 
+          Math.min(radius * 2, canvas.height - Math.max(0, y - radius))
+        );
         
-        // Simple box blur implementation
-        const width = imageData.width;
-        const height = imageData.height;
-        const blurRadius = 3;
+        // Apply gaussian blur
+        const blurRadius = Math.max(1, Math.floor(brushSize / 10));
+        const blurredData = gaussianBlur(imageData, blurRadius);
         
-        // Create blurred version by averaging neighboring pixels
-        for (let y = blurRadius; y < height - blurRadius; y++) {
-          for (let x = blurRadius; x < width - blurRadius; x++) {
-            let r = 0, g = 0, b = 0, count = 0;
-            
-            // Sample surrounding pixels
-            for (let dy = -blurRadius; dy <= blurRadius; dy++) {
-              for (let dx = -blurRadius; dx <= blurRadius; dx++) {
-                const idx = ((y + dy) * width + (x + dx)) * 4;
-                r += data[idx];
-                g += data[idx + 1];
-                b += data[idx + 2];
-                count++;
-              }
-            }
-            
-            // Set averaged color
-            const idx = (y * width + x) * 4;
-            data[idx] = r / count;
-            data[idx + 1] = g / count;
-            data[idx + 2] = b / count;
-          }
+        // Blend the blurred result back
+        const originalData = ctx.getImageData(
+          Math.max(0, x - radius), 
+          Math.max(0, y - radius), 
+          Math.min(radius * 2, canvas.width - Math.max(0, x - radius)), 
+          Math.min(radius * 2, canvas.height - Math.max(0, y - radius))
+        );
+        
+        // Blend original and blurred based on intensity
+        for (let i = 0; i < blurredData.data.length; i += 4) {
+          blurredData.data[i] = originalData.data[i] * (1 - intensity) + blurredData.data[i] * intensity;
+          blurredData.data[i + 1] = originalData.data[i + 1] * (1 - intensity) + blurredData.data[i + 1] * intensity;
+          blurredData.data[i + 2] = originalData.data[i + 2] * (1 - intensity) + blurredData.data[i + 2] * intensity;
         }
         
-        ctx.putImageData(imageData, x - radius, y - radius);
+        ctx.putImageData(blurredData, Math.max(0, x - radius), Math.max(0, y - radius));
       } catch (e) {
-        // Fallback: just darken the area
-        ctx.globalAlpha = 0.5;
-        ctx.fillStyle = '#808080';
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, Math.PI * 2);
-        ctx.fill();
+        console.error('Blur error:', e);
+        // Fallback: simple blur effect
+        ctx.filter = `blur(${blurRadius}px)`;
+        ctx.globalAlpha = intensity;
+        ctx.drawImage(canvas, 0, 0);
+        ctx.filter = 'none';
         ctx.globalAlpha = 1.0;
       }
-      console.log('Blur: applied blur at', { x, y });
+      
+      console.log('Blur: applied blur at', { x, y, brushSize, intensity });
     },
   },
   
@@ -1113,7 +1391,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
     onDeactivate: (canvas) => {
       canvas.style.cursor = 'default';
     },
-    onMouseDown: (event, canvas) => {
+    onMouseDown: (event, canvas, toolOptions) => {
       const ctx = canvas.getContext('2d');
       if (!ctx) return;
       
@@ -1121,63 +1399,53 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       const x = event.clientX - rect.left;
       const y = event.clientY - rect.top;
       
-      // Apply proper sharpen effect
-      const radius = 25;
+      // Get tool options
+      const brushSize = toolOptions?.brushSize || 50;
+      const intensity = (toolOptions?.opacity || 50) / 100;
+      
+      const radius = Math.max(brushSize, 20);
+      
       try {
-        const imageData = ctx.getImageData(x - radius, y - radius, radius * 2, radius * 2);
-        const data = imageData.data;
-        const width = imageData.width;
-        const height = imageData.height;
+        // Get the image data for the area to sharpen
+        const imageData = ctx.getImageData(
+          Math.max(0, x - radius), 
+          Math.max(0, y - radius), 
+          Math.min(radius * 2, canvas.width - Math.max(0, x - radius)), 
+          Math.min(radius * 2, canvas.height - Math.max(0, y - radius))
+        );
         
-        // Sharpen kernel
-        const kernel = [
-          0, -1, 0,
-          -1, 5, -1,
-          0, -1, 0
-        ];
+        // Apply sharpen filter
+        const sharpenAmount = intensity * 2; // Scale intensity for sharpen
+        const sharpenedData = sharpen(imageData, sharpenAmount);
         
-        const output = new Uint8ClampedArray(data);
+        // Blend the sharpened result back with original
+        const originalData = ctx.getImageData(
+          Math.max(0, x - radius), 
+          Math.max(0, y - radius), 
+          Math.min(radius * 2, canvas.width - Math.max(0, x - radius)), 
+          Math.min(radius * 2, canvas.height - Math.max(0, y - radius))
+        );
         
-        // Apply convolution for sharpening
-        for (let y = 1; y < height - 1; y++) {
-          for (let x = 1; x < width - 1; x++) {
-            let r = 0, g = 0, b = 0;
-            
-            for (let ky = -1; ky <= 1; ky++) {
-              for (let kx = -1; kx <= 1; kx++) {
-                const idx = ((y + ky) * width + (x + kx)) * 4;
-                const kernelIdx = (ky + 1) * 3 + (kx + 1);
-                const kernelVal = kernel[kernelIdx];
-                
-                r += data[idx] * kernelVal;
-                g += data[idx + 1] * kernelVal;
-                b += data[idx + 2] * kernelVal;
-              }
-            }
-            
-            const idx = (y * width + x) * 4;
-            output[idx] = Math.max(0, Math.min(255, r));
-            output[idx + 1] = Math.max(0, Math.min(255, g));
-            output[idx + 2] = Math.max(0, Math.min(255, b));
-          }
+        // Blend original and sharpened based on intensity
+        for (let i = 0; i < sharpenedData.data.length; i += 4) {
+          sharpenedData.data[i] = originalData.data[i] * (1 - intensity) + sharpenedData.data[i] * intensity;
+          sharpenedData.data[i + 1] = originalData.data[i + 1] * (1 - intensity) + sharpenedData.data[i + 1] * intensity;
+          sharpenedData.data[i + 2] = originalData.data[i + 2] * (1 - intensity) + sharpenedData.data[i + 2] * intensity;
         }
         
-        // Copy sharpened data back
-        for (let i = 0; i < data.length; i++) {
-          data[i] = output[i];
-        }
-        
-        ctx.putImageData(imageData, x - radius, y - radius);
+        ctx.putImageData(sharpenedData, Math.max(0, x - radius), Math.max(0, y - radius));
       } catch (e) {
-        // Fallback: just brighten the area
-        ctx.globalAlpha = 0.3;
+        console.error('Sharpen error:', e);
+        // Fallback: contrast enhancement
+        ctx.globalAlpha = intensity * 0.3;
         ctx.fillStyle = '#ffffff';
         ctx.beginPath();
         ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1.0;
       }
-      console.log('Sharpen: applied sharpen at', { x, y });
+      
+      console.log('Sharpen: applied sharpen at', { x, y, brushSize, intensity });
     },
   },
   

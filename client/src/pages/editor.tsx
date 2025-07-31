@@ -5,7 +5,6 @@ import LeftToolbar from '@/components/editor/LeftToolbar';
 import CanvasArea from '@/components/editor/CanvasArea';
 import RightSidebar from '@/components/editor/RightSidebar';
 import StatusBar from '@/components/editor/StatusBar';
-import { useKeyboard } from '@/hooks/useKeyboard';
 import { useEffect } from 'react';
 import { useEditorStore } from '@/store/editorStore';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
@@ -14,7 +13,6 @@ export default function Editor() {
   const { createDocument, documents } = useEditorStore();
   
   // Initialize keyboard shortcuts
-  useKeyboard();
   useKeyboardShortcuts();
 
   // Create initial document if none exists

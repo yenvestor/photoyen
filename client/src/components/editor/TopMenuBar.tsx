@@ -1,6 +1,36 @@
 import { useState } from 'react';
-import { FileOperations } from '@/utils/fileOperations';
+import { openImageFilePicker, importImageFile, exportCanvasAsImage, saveDocumentAsProject, loadProjectFile, quickExport } from '@/utils/fileOperations';
 import { useEditorStore } from '@/store/editorStore';
+import {
+  applyBrightnessContrast,
+  applyLevels,
+  applyHueSaturation,
+  convertToGrayscale,
+  invertColors,
+  applyExposure,
+  applyVibrance,
+  applyPosterize,
+  applyThreshold
+} from '@/utils/imageAdjustments';
+import {
+  applyMotionBlur,
+  applyOilPainting,
+  applyWatercolor,
+  applyEmboss,
+  applyEdgeDetection,
+  applyPinch,
+  applySpherize
+} from '@/utils/filterEffects';
+import {
+  rotateCanvas,
+  scaleCanvas,
+  flipHorizontal,
+  flipVertical,
+  skewCanvas,
+  resizeCanvas,
+  cropCanvas
+} from '@/utils/transformTools';
+import { CanvasClipboard } from '@/utils/clipboard';
 
 interface MenuItem {
   label: string;
@@ -22,7 +52,40 @@ interface MenuGroup {
 
 export default function TopMenuBar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const { createDocument, activeDocumentId, documents, undo, redo } = useEditorStore();
+  const { createDocument, activeDocumentId, documents, undo, redo, addHistoryStep, closeDocument } = useEditorStore();
+  const activeDocument = documents.find(doc => doc.id === activeDocumentId);
+
+  // Helper function to get the active canvas
+  const getActiveCanvas = (): HTMLCanvasElement | null => {
+    return document.querySelector('canvas') as HTMLCanvasElement;
+  };
+
+  // Helper function to add history and get canvas
+  const withHistoryAndCanvas = (operation: (canvas: HTMLCanvasElement) => void) => {
+    const canvas = getActiveCanvas();
+    if (!canvas) {
+      alert('No active canvas found');
+      return;
+    }
+    
+    // Save state before operation
+    const beforeState = canvas.toDataURL();
+    
+    // Perform operation
+    operation(canvas);
+    
+    // Save state after operation
+    const afterState = canvas.toDataURL();
+    
+    // Add to history
+    addHistoryStep({
+      id: Date.now().toString(),
+      action: 'transform',
+      before: beforeState,
+      after: afterState,
+      timestamp: Date.now()
+    });
+  };
 
   const activeDocument = documents.find(doc => doc.id === activeDocumentId);
 
@@ -32,22 +95,39 @@ export default function TopMenuBar() {
   };
 
   const handleOpenDocument = async () => {
-    const file = await FileOperations.openFile();
-    if (file) {
-      try {
-        const img = await FileOperations.loadImageFromFile(file);
-        createDocument(file.name, img.width, img.height);
-      } catch (error) {
-        console.error('Failed to open file:', error);
+    try {
+      const files = await openImageFilePicker();
+      if (files.length > 0) {
+        const result = await importImageFile(files[0]);
+        if (result.success) {
+          console.log(result.message);
+        } else {
+          console.error('Failed to open file:', result.message);
+          alert(result.message);
+        }
       }
+    } catch (error) {
+      console.error('Failed to open file:', error);
+      alert('Failed to open file');
     }
     setOpenDropdown(null);
   };
 
   const handleSaveDocument = () => {
     if (activeDocument) {
-      // Implement save functionality
-      console.log('Saving document:', activeDocument.name);
+      saveDocumentAsProject(activeDocument.id);
+    } else {
+      alert('No document to save');
+    }
+    setOpenDropdown(null);
+  };
+
+  const handleExportAs = (format: 'png' | 'jpeg' | 'webp') => {
+    const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+    if (canvas && activeDocument) {
+      quickExport[format](canvas, activeDocument.name);
+    } else {
+      alert('No document to export');
     }
     setOpenDropdown(null);
   };
@@ -95,10 +175,10 @@ export default function TopMenuBar() {
           label: 'Export as', 
           action: () => {},
           submenu: [
-            { label: 'PNG...', action: () => {} },
-            { label: 'JPG...', action: () => {} },
+            { label: 'PNG...', action: () => handleExportAs('png') },
+            { label: 'JPG...', action: () => handleExportAs('jpeg') },
             { label: 'GIF...', action: () => {} },
-            { label: 'WebP...', action: () => {} },
+            { label: 'WebP...', action: () => handleExportAs('webp') },
             { label: 'SVG...', action: () => {} },
             { label: 'PDF...', action: () => {} }
           ]
@@ -122,50 +202,115 @@ export default function TopMenuBar() {
         },
         { label: 'Scripts...', action: () => {} },
         { type: 'separator' },
-        { label: 'Close', shortcut: 'Ctrl+W', action: () => {} },
-        { label: 'Close All', shortcut: 'Alt+Ctrl+W', action: () => {} }
+        { label: 'Close', shortcut: 'Ctrl+W', action: () => {
+          if (activeDocument && confirm('Close current document?')) {
+            closeDocument(activeDocument.id);
+          }
+        }},
+        { label: 'Close All', shortcut: 'Alt+Ctrl+W', action: () => {
+          if (confirm('Close all documents?')) {
+            documents.forEach(doc => closeDocument(doc.id));
+          }
+        }}
       ]
     },
     {
       id: 'edit',
       label: 'Edit',
       items: [
-        { label: 'Undo / Redo', action: () => {} },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => undo() },
+        { label: 'Redo', shortcut: 'Shift+Ctrl+Z', action: () => redo() },
         { type: 'separator' },
-        { label: 'Step Forward', shortcut: 'Shift+Ctrl+Z', action: () => {} },
-        { label: 'Step Backward', shortcut: 'Ctrl+Z', action: () => {} },
+        { label: 'Step Forward', shortcut: 'Shift+Ctrl+Z', action: () => redo() },
+        { label: 'Step Backward', shortcut: 'Ctrl+Z', action: () => undo() },
         { type: 'separator' },
         { label: 'Fade...', shortcut: 'Shift+Ctrl+F', action: () => {} },
         { type: 'separator' },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => {} },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => {} },
-        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => {} },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => {} },
-        { label: 'Clear', shortcut: 'Delete', action: () => {} },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.cut(canvas);
+        }},
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.copy(canvas);
+        }},
+        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.copy(canvas);
+        }},
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.pasteCenter(canvas);
+        }},
+        { label: 'Clear', shortcut: 'Delete', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.clear(canvas);
+        }},
         { type: 'separator' },
-        { label: 'Fill...', shortcut: 'Shift+F5', action: () => {} },
-        { label: 'Stroke...', action: () => {} },
+        { label: 'Fill...', shortcut: 'Shift+F5', action: () => {
+          const color = prompt('Enter fill color (hex):', '#000000');
+          if (color) {
+            const canvas = getActiveCanvas();
+            if (canvas) CanvasClipboard.fill(canvas, color);
+          }
+        }},
+        { label: 'Stroke...', action: () => {
+          const color = prompt('Enter stroke color (hex):', '#000000');
+          const width = prompt('Enter stroke width (px):', '1');
+          if (color && width) {
+            const canvas = getActiveCanvas();
+            if (canvas) CanvasClipboard.stroke(canvas, color, parseInt(width));
+          }
+        }},
         { type: 'separator' },
         { label: 'Content-Aware Scale', action: () => {} },
         { label: 'Puppet Warp', action: () => {} },
         { label: 'Perspective Warp', action: () => {} },
-        { label: 'Free Transform', shortcut: 'Alt+Ctrl+T', action: () => {} },
+        { label: 'Free Transform', shortcut: 'Alt+Ctrl+T', action: () => {
+          alert('Free Transform: Click and drag on canvas to transform selection');
+        }},
         { 
           label: 'Transform', 
           action: () => {},
           submenu: [
-            { label: 'Scale', action: () => {} },
-            { label: 'Rotate', action: () => {} },
-            { label: 'Skew', action: () => {} },
+            { label: 'Scale', action: () => {
+              const scale = prompt('Enter scale factor (1.0 = 100%):', '1.0');
+              if (scale) {
+                withHistoryAndCanvas(canvas => scaleCanvas(canvas, parseFloat(scale), parseFloat(scale)));
+              }
+            }},
+            { label: 'Rotate', action: () => {
+              const degrees = prompt('Enter rotation angle (degrees):', '90');
+              if (degrees) {
+                withHistoryAndCanvas(canvas => rotateCanvas(canvas, parseFloat(degrees)));
+              }
+            }},
+            { label: 'Skew', action: () => {
+              const skewX = prompt('Enter horizontal skew (degrees):', '0');
+              const skewY = prompt('Enter vertical skew (degrees):', '0');
+              if (skewX && skewY) {
+                withHistoryAndCanvas(canvas => skewCanvas(canvas, parseFloat(skewX), parseFloat(skewY)));
+              }
+            }},
             { label: 'Distort', action: () => {} },
             { label: 'Perspective', action: () => {} },
             { label: 'Warp', action: () => {} },
             { type: 'separator' },
-            { label: 'Rotate 180°', action: () => {} },
-            { label: 'Rotate 90° CW', action: () => {} },
-            { label: 'Rotate 90° CCW', action: () => {} },
-            { label: 'Flip Horizontal', action: () => {} },
-            { label: 'Flip Vertical', action: () => {} }
+            { label: 'Rotate 180°', action: () => {
+              withHistoryAndCanvas(canvas => rotateCanvas(canvas, 180));
+            }},
+            { label: 'Rotate 90° CW', action: () => {
+              withHistoryAndCanvas(canvas => rotateCanvas(canvas, 90));
+            }},
+            { label: 'Rotate 90° CCW', action: () => {
+              withHistoryAndCanvas(canvas => rotateCanvas(canvas, -90));
+            }},
+            { label: 'Flip Horizontal', action: () => {
+              withHistoryAndCanvas(canvas => flipHorizontal(canvas));
+            }},
+            { label: 'Flip Vertical', action: () => {
+              withHistoryAndCanvas(canvas => flipVertical(canvas));
+            }}
           ]
         },
         { label: 'Auto-Align', action: () => {} },
@@ -216,7 +361,9 @@ export default function TopMenuBar() {
             { label: 'RGB Color', action: () => {} },
             { label: 'CMYK Color', action: () => {} },
             { label: 'Lab Color', action: () => {} },
-            { label: 'Grayscale', action: () => {} },
+            { label: 'Grayscale', action: () => {
+              withHistoryAndCanvas(canvas => convertToGrayscale(canvas));
+            }},
             { type: 'separator' },
             { label: '8 Bits/Channel', action: () => {} },
             { label: '16 Bits/Channel', action: () => {} },
@@ -227,21 +374,80 @@ export default function TopMenuBar() {
           label: 'Adjustments', 
           action: () => {},
           submenu: [
-            { label: 'Brightness/Contrast...', action: () => {} },
-            { label: 'Levels...', shortcut: 'Ctrl+L', action: () => {} },
-            { label: 'Curves...', shortcut: 'Ctrl+M', action: () => {} },
-            { label: 'Exposure...', action: () => {} },
-            { label: 'Vibrance...', action: () => {} },
-            { label: 'Hue/Saturation...', shortcut: 'Ctrl+U', action: () => {} },
+            { label: 'Brightness/Contrast...', action: () => {
+              const brightness = prompt('Enter brightness (-100 to 100):', '0');
+              const contrast = prompt('Enter contrast (-100 to 100):', '0');
+              if (brightness !== null && contrast !== null) {
+                withHistoryAndCanvas(canvas => applyBrightnessContrast(canvas, {
+                  brightness: parseFloat(brightness),
+                  contrast: parseFloat(contrast)
+                }));
+              }
+            }},
+            { label: 'Levels...', shortcut: 'Ctrl+L', action: () => {
+              const inputBlack = prompt('Input Black (0-255):', '0');
+              const inputWhite = prompt('Input White (0-255):', '255');
+              const gamma = prompt('Gamma (0.1-10):', '1.0');
+              if (inputBlack !== null && inputWhite !== null && gamma !== null) {
+                withHistoryAndCanvas(canvas => applyLevels(canvas, {
+                  inputBlack: parseFloat(inputBlack),
+                  inputWhite: parseFloat(inputWhite),
+                  gamma: parseFloat(gamma),
+                  outputBlack: 0,
+                  outputWhite: 255
+                }));
+              }
+            }},
+            { label: 'Curves...', shortcut: 'Ctrl+M', action: () => {
+              alert('Curves adjustment: Use brightness/contrast for now');
+            }},
+            { label: 'Exposure...', action: () => {
+              const exposure = prompt('Enter exposure (-5 to 5):', '0');
+              if (exposure !== null) {
+                withHistoryAndCanvas(canvas => applyExposure(canvas, parseFloat(exposure)));
+              }
+            }},
+            { label: 'Vibrance...', action: () => {
+              const vibrance = prompt('Enter vibrance (-100 to 100):', '0');
+              if (vibrance !== null) {
+                withHistoryAndCanvas(canvas => applyVibrance(canvas, parseFloat(vibrance)));
+              }
+            }},
+            { label: 'Hue/Saturation...', shortcut: 'Ctrl+U', action: () => {
+              const hue = prompt('Enter hue (-180 to 180):', '0');
+              const saturation = prompt('Enter saturation (-100 to 100):', '0');
+              const lightness = prompt('Enter lightness (-100 to 100):', '0');
+              if (hue !== null && saturation !== null && lightness !== null) {
+                withHistoryAndCanvas(canvas => applyHueSaturation(canvas, {
+                  hue: parseFloat(hue),
+                  saturation: parseFloat(saturation),
+                  lightness: parseFloat(lightness)
+                }));
+              }
+            }},
             { label: 'Color Balance...', shortcut: 'Ctrl+B', action: () => {} },
-            { label: 'Black & White...', shortcut: 'Alt+Shift+Ctrl+B', action: () => {} },
+            { label: 'Black & White...', shortcut: 'Alt+Shift+Ctrl+B', action: () => {
+              withHistoryAndCanvas(canvas => convertToGrayscale(canvas));
+            }},
             { label: 'Photo Filter...', action: () => {} },
             { label: 'Channel Mixer...', action: () => {} },
             { label: 'Color Lookup...', action: () => {} },
             { type: 'separator' },
-            { label: 'Invert', shortcut: 'Ctrl+I', action: () => {} },
-            { label: 'Posterize...', action: () => {} },
-            { label: 'Threshold...', action: () => {} },
+            { label: 'Invert', shortcut: 'Ctrl+I', action: () => {
+              withHistoryAndCanvas(canvas => invertColors(canvas));
+            }},
+            { label: 'Posterize...', action: () => {
+              const levels = prompt('Enter posterize levels (2-255):', '8');
+              if (levels !== null) {
+                withHistoryAndCanvas(canvas => applyPosterize(canvas, parseInt(levels)));
+              }
+            }},
+            { label: 'Threshold...', action: () => {
+              const threshold = prompt('Enter threshold (0-255):', '128');
+              if (threshold !== null) {
+                withHistoryAndCanvas(canvas => applyThreshold(canvas, parseInt(threshold)));
+              }
+            }},
             { label: 'Gradient Map...', action: () => {} },
             { label: 'Selective Color...', action: () => {} }
           ]
@@ -523,9 +729,32 @@ export default function TopMenuBar() {
           label: 'Blur', 
           action: () => {},
           submenu: [
-            { label: 'Gaussian Blur...', action: () => {} },
-            { label: 'Lens Blur...', action: () => {} },
-            { label: 'Motion Blur...', action: () => {} },
+            { label: 'Gaussian Blur...', action: () => {
+              const radius = prompt('Enter blur radius (1-10):', '3');
+              if (radius !== null) {
+                withHistoryAndCanvas(canvas => {
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    const blurred = require('@/utils/imageProcessing').gaussianBlur(imageData, parseInt(radius));
+                    ctx.putImageData(blurred, 0, 0);
+                  }
+                });
+              }
+            }},
+            { label: 'Lens Blur...', action: () => {
+              alert('Use Gaussian Blur for similar effect');
+            }},
+            { label: 'Motion Blur...', action: () => {
+              const angle = prompt('Enter blur angle (0-360):', '0');
+              const distance = prompt('Enter blur distance (1-100):', '10');
+              if (angle !== null && distance !== null) {
+                withHistoryAndCanvas(canvas => applyMotionBlur(canvas, {
+                  angle: parseFloat(angle),
+                  distance: parseFloat(distance)
+                }));
+              }
+            }},
             { label: 'Radial Blur...', action: () => {} },
             { label: 'Smart Blur...', action: () => {} },
             { label: 'Surface Blur...', action: () => {} },
@@ -551,11 +780,21 @@ export default function TopMenuBar() {
           action: () => {},
           submenu: [
             { label: 'Displace...', action: () => {} },
-            { label: 'Pinch...', action: () => {} },
+            { label: 'Pinch...', action: () => {
+              const amount = prompt('Enter pinch amount (-1 to 1):', '0.5');
+              if (amount !== null) {
+                withHistoryAndCanvas(canvas => applyPinch(canvas, parseFloat(amount)));
+              }
+            }},
             { label: 'Polar Coordinates...', action: () => {} },
             { label: 'Ripple...', action: () => {} },
             { label: 'Shear...', action: () => {} },
-            { label: 'Spherize...', action: () => {} },
+            { label: 'Spherize...', action: () => {
+              const amount = prompt('Enter spherize amount (0-200):', '100');
+              if (amount !== null) {
+                withHistoryAndCanvas(canvas => applySpherize(canvas, parseFloat(amount)));
+              }
+            }},
             { label: 'Twirl...', action: () => {} },
             { label: 'Wave...', action: () => {} },
             { label: 'ZigZag...', action: () => {} },
@@ -618,16 +857,28 @@ export default function TopMenuBar() {
           action: () => {},
           submenu: [
             { label: 'Diffuse...', action: () => {} },
-            { label: 'Emboss...', action: () => {} },
+            { label: 'Emboss...', action: () => {
+              withHistoryAndCanvas(canvas => applyEmboss(canvas));
+            }},
             { label: 'Extrude...', action: () => {} },
-            { label: 'Find Edges', action: () => {} },
+            { label: 'Find Edges', action: () => {
+              withHistoryAndCanvas(canvas => applyEdgeDetection(canvas));
+            }},
             { label: 'Glowing Edges...', action: () => {} },
-            { label: 'Solarize', action: () => {} },
+            { label: 'Solarize', action: () => {
+              withHistoryAndCanvas(canvas => applyWatercolor(canvas));
+            }},
             { label: 'Tiles...', action: () => {} },
             { label: 'Trace Contour...', action: () => {} },
             { label: 'Wind...', action: () => {} },
             { type: 'separator' },
-            { label: 'Oil Paint...', action: () => {} }
+            { label: 'Oil Paint...', action: () => {
+              const radius = prompt('Enter brush radius (1-10):', '5');
+              const levels = prompt('Enter intensity levels (5-50):', '20');
+              if (radius !== null && levels !== null) {
+                withHistoryAndCanvas(canvas => applyOilPainting(canvas, parseInt(radius), parseInt(levels)));
+              }
+            }}
           ]
         },
         { 

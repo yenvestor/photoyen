@@ -112,10 +112,10 @@ export default function TopMenuBar() {
           label: 'Export as', 
           action: () => {},
           submenu: [
-            { label: 'PNG...', action: () => {} },
-            { label: 'JPG...', action: () => {} },
+            { label: 'PNG...', action: () => handleExportAs('png') },
+            { label: 'JPG...', action: () => handleExportAs('jpeg') },
             { label: 'GIF...', action: () => {} },
-            { label: 'WebP...', action: () => {} },
+            { label: 'WebP...', action: () => handleExportAs('webp') },
             { label: 'SVG...', action: () => {} },
             { label: 'PDF...', action: () => {} }
           ]
@@ -147,10 +147,11 @@ export default function TopMenuBar() {
       id: 'edit',
       label: 'Edit',
       items: [
-        { label: 'Undo / Redo', action: () => {} },
+        { label: 'Undo', shortcut: 'Ctrl+Z', action: () => undo() },
+        { label: 'Redo', shortcut: 'Shift+Ctrl+Z', action: () => redo() },
         { type: 'separator' },
-        { label: 'Step Forward', shortcut: 'Shift+Ctrl+Z', action: () => {} },
-        { label: 'Step Backward', shortcut: 'Ctrl+Z', action: () => {} },
+        { label: 'Step Forward', shortcut: 'Shift+Ctrl+Z', action: () => redo() },
+        { label: 'Step Backward', shortcut: 'Ctrl+Z', action: () => undo() },
         { type: 'separator' },
         { label: 'Fade...', shortcut: 'Shift+Ctrl+F', action: () => {} },
         { type: 'separator' },

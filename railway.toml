@@ -7,3 +7,9 @@ startCommand = "npm start"
 healthcheckPath = "/"
 healthcheckTimeout = 100
 restartPolicyType = "always"
+
+[env]
+NODE_ENV = "production"
+
+[[services]]
+name = "photoyen"

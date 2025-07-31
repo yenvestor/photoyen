@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileOperations } from '@/utils/fileOperations';
+import { openImageFilePicker, importImageFile, exportCanvasAsImage, saveDocumentAsProject, loadProjectFile, quickExport } from '@/utils/fileOperations';
 import { useEditorStore } from '@/store/editorStore';
 
 interface MenuItem {
@@ -32,22 +32,39 @@ export default function TopMenuBar() {
   };
 
   const handleOpenDocument = async () => {
-    const file = await FileOperations.openFile();
-    if (file) {
-      try {
-        const img = await FileOperations.loadImageFromFile(file);
-        createDocument(file.name, img.width, img.height);
-      } catch (error) {
-        console.error('Failed to open file:', error);
+    try {
+      const files = await openImageFilePicker();
+      if (files.length > 0) {
+        const result = await importImageFile(files[0]);
+        if (result.success) {
+          console.log(result.message);
+        } else {
+          console.error('Failed to open file:', result.message);
+          alert(result.message);
+        }
       }
+    } catch (error) {
+      console.error('Failed to open file:', error);
+      alert('Failed to open file');
     }
     setOpenDropdown(null);
   };
 
   const handleSaveDocument = () => {
     if (activeDocument) {
-      // Implement save functionality
-      console.log('Saving document:', activeDocument.name);
+      saveDocumentAsProject(activeDocument.id);
+    } else {
+      alert('No document to save');
+    }
+    setOpenDropdown(null);
+  };
+
+  const handleExportAs = (format: 'png' | 'jpeg' | 'webp') => {
+    const canvas = document.querySelector('canvas') as HTMLCanvasElement;
+    if (canvas && activeDocument) {
+      quickExport[format](canvas, activeDocument.name);
+    } else {
+      alert('No document to export');
     }
     setOpenDropdown(null);
   };

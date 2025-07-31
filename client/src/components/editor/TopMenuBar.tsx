@@ -1,6 +1,36 @@
 import { useState } from 'react';
 import { openImageFilePicker, importImageFile, exportCanvasAsImage, saveDocumentAsProject, loadProjectFile, quickExport } from '@/utils/fileOperations';
 import { useEditorStore } from '@/store/editorStore';
+import {
+  applyBrightnessContrast,
+  applyLevels,
+  applyHueSaturation,
+  convertToGrayscale,
+  invertColors,
+  applyExposure,
+  applyVibrance,
+  applyPosterize,
+  applyThreshold
+} from '@/utils/imageAdjustments';
+import {
+  applyMotionBlur,
+  applyOilPainting,
+  applyWatercolor,
+  applyEmboss,
+  applyEdgeDetection,
+  applyPinch,
+  applySpherize
+} from '@/utils/filterEffects';
+import {
+  rotateCanvas,
+  scaleCanvas,
+  flipHorizontal,
+  flipVertical,
+  skewCanvas,
+  resizeCanvas,
+  cropCanvas
+} from '@/utils/transformTools';
+import { CanvasClipboard } from '@/utils/clipboard';
 
 interface MenuItem {
   label: string;
@@ -22,7 +52,39 @@ interface MenuGroup {
 
 export default function TopMenuBar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
-  const { createDocument, activeDocumentId, documents, undo, redo } = useEditorStore();
+  const { createDocument, activeDocumentId, documents, undo, redo, addHistoryStep } = useEditorStore();
+
+  // Helper function to get the active canvas
+  const getActiveCanvas = (): HTMLCanvasElement | null => {
+    return document.querySelector('canvas') as HTMLCanvasElement;
+  };
+
+  // Helper function to add history and get canvas
+  const withHistoryAndCanvas = (operation: (canvas: HTMLCanvasElement) => void) => {
+    const canvas = getActiveCanvas();
+    if (!canvas) {
+      alert('No active canvas found');
+      return;
+    }
+    
+    // Save state before operation
+    const beforeState = canvas.toDataURL();
+    
+    // Perform operation
+    operation(canvas);
+    
+    // Save state after operation
+    const afterState = canvas.toDataURL();
+    
+    // Add to history
+    addHistoryStep({
+      id: Date.now().toString(),
+      action: 'transform',
+      before: beforeState,
+      after: afterState,
+      timestamp: Date.now()
+    });
+  };
 
   const activeDocument = documents.find(doc => doc.id === activeDocumentId);
 
@@ -155,11 +217,26 @@ export default function TopMenuBar() {
         { type: 'separator' },
         { label: 'Fade...', shortcut: 'Shift+Ctrl+F', action: () => {} },
         { type: 'separator' },
-        { label: 'Cut', shortcut: 'Ctrl+X', action: () => {} },
-        { label: 'Copy', shortcut: 'Ctrl+C', action: () => {} },
-        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => {} },
-        { label: 'Paste', shortcut: 'Ctrl+V', action: () => {} },
-        { label: 'Clear', shortcut: 'Delete', action: () => {} },
+        { label: 'Cut', shortcut: 'Ctrl+X', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.cut(canvas);
+        }},
+        { label: 'Copy', shortcut: 'Ctrl+C', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.copy(canvas);
+        }},
+        { label: 'Copy Merged', shortcut: 'Shift+Ctrl+C', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.copy(canvas);
+        }},
+        { label: 'Paste', shortcut: 'Ctrl+V', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.pasteCenter(canvas);
+        }},
+        { label: 'Clear', shortcut: 'Delete', action: () => {
+          const canvas = getActiveCanvas();
+          if (canvas) CanvasClipboard.clear(canvas);
+        }},
         { type: 'separator' },
         { label: 'Fill...', shortcut: 'Shift+F5', action: () => {} },
         { label: 'Stroke...', action: () => {} },

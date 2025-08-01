@@ -20,27 +20,29 @@ export default function RightSidebar() {
   const activeLayer = activeDocument?.layers.find(layer => layer.id === activeDocument.activeLayerId);
 
   const handleAddLayer = () => {
-    addLayer({
-      name: `Layer ${(activeDocument?.layers.length || 0) + 1}`,
-      type: 'raster',
-      visible: true,
-      locked: false,
-      opacity: 100,
-      blendMode: 'normal',
-      data: null,
-    });
+    if (activeDocumentId) {
+      addLayer(activeDocumentId, {
+        name: `Layer ${(activeDocument?.layers.length || 0) + 1}`,
+        type: 'raster',
+        visible: true,
+        locked: false,
+        opacity: 100,
+        blendMode: 'normal',
+        data: null,
+      });
+    }
   };
 
   const handleDeleteLayer = () => {
-    if (activeLayer && activeDocument && activeDocument.layers.length > 1) {
-      removeLayer(activeLayer.id);
+    if (activeLayer && activeDocument && activeDocumentId && activeDocument.layers.length > 1) {
+      removeLayer(activeDocumentId, activeLayer.id);
     }
   };
 
   const toggleLayerVisibility = (layerId: string) => {
     const layer = activeDocument?.layers.find(l => l.id === layerId);
-    if (layer) {
-      updateLayer(layerId, { visible: !layer.visible });
+    if (layer && activeDocumentId) {
+      updateLayer(activeDocumentId, layerId, { visible: !layer.visible });
     }
   };
 
@@ -80,7 +82,7 @@ export default function RightSidebar() {
           <select 
             className="w-full bg-tertiary-dark border border-quaternary-dark rounded px-2 py-1 text-sm"
             value={activeLayer.blendMode}
-            onChange={(e) => updateLayer(activeLayer.id, { blendMode: e.target.value as any })}
+            onChange={(e) => activeDocumentId && updateLayer(activeDocumentId, activeLayer.id, { blendMode: e.target.value as any })}
           >
             <option value="normal">Normal</option>
             <option value="multiply">Multiply</option>
@@ -104,7 +106,7 @@ export default function RightSidebar() {
             max="100" 
             value={activeLayer.opacity}
             className="flex-1 h-2 bg-tertiary-dark rounded-lg"
-            onChange={(e) => updateLayer(activeLayer.id, { opacity: parseInt(e.target.value) })}
+            onChange={(e) => activeDocumentId && updateLayer(activeDocumentId, activeLayer.id, { opacity: parseInt(e.target.value) })}
           />
           <span className="text-xs w-8">{activeLayer.opacity}%</span>
         </div>
@@ -118,7 +120,7 @@ export default function RightSidebar() {
             className={`p-2 flex items-center cursor-pointer border-b border-tertiary-dark hover:bg-tertiary-dark ${
               layer.id === activeDocument.activeLayerId ? 'bg-accent-blue' : ''
             }`}
-            onClick={() => setActiveLayer(layer.id)}
+            onClick={() => activeDocumentId && setActiveLayer(activeDocumentId, layer.id)}
           >
             <div className="w-4 h-4 mr-2 flex items-center justify-center">
               <button onClick={(e) => {

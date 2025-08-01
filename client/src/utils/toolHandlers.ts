@@ -23,6 +23,7 @@ export const TOOL_NAMES: Record<ToolId, string> = {
   'lasso-select': 'Lasso Select Tool',
   'magic-wand': 'Magic Wand Tool',
   'quick-selection': 'Quick Selection Tool',
+  'quick-select': 'Quick Select Tool',
   'object-selection': 'Object Selection Tool',
   
   // Transformation tools
@@ -36,6 +37,7 @@ export const TOOL_NAMES: Record<ToolId, string> = {
   // Retouching tools
   'spot-healing': 'Spot Healing Brush Tool',
   'healing-brush': 'Healing Brush Tool',
+  'healing': 'Healing Tool',
   'patch': 'Patch Tool',
   'red-eye': 'Red Eye Tool',
   
@@ -58,6 +60,7 @@ export const TOOL_NAMES: Record<ToolId, string> = {
   
   // Type tools
   'type': 'Type Tool',
+  'text': 'Text Tool',
   'vertical-type': 'Vertical Type Tool',
   
   // Path tools
@@ -75,6 +78,7 @@ export const TOOL_NAMES: Record<ToolId, string> = {
   'line': 'Line Tool',
   'parametric-shape': 'Parametric Shape Tool',
   'custom-shape': 'Custom Shape Tool',
+  'shape': 'Shape Tool',
   
   // Navigation tools
   'hand': 'Hand Tool',
@@ -118,7 +122,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
           ctx.clearRect(selectionBounds.x, selectionBounds.y, selectionBounds.width, selectionBounds.height);
           
           // Store the extracted content
-          canvas._moveSelection = {
+          (canvas as any)._moveSelection = {
             imageData: selectedImageData,
             bounds: selectionBounds
           };
@@ -148,7 +152,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
         const tempCtx = tempCanvas.getContext('2d');
         if (tempCtx) {
           tempCtx.putImageData(imageData, 0, 0);
-          canvas._moveBackup = tempCanvas;
+          (canvas as any)._moveBackup = tempCanvas;
         }
       }
       
@@ -190,8 +194,8 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       if (!ctx) return;
       
       // Handle moving a selection
-      if (canvas._moveSelection && (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)) {
-        const selection = canvas._moveSelection;
+      if ((canvas as any)._moveSelection && (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)) {
+        const selection = (canvas as any)._moveSelection;
         const newX = selection.bounds.x + deltaX;
         const newY = selection.bounds.y + deltaY;
         
@@ -222,14 +226,14 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
         }
         
         console.log('Move tool: moved selection to', newSelectionBounds);
-        delete canvas._moveSelection;
+        delete (canvas as any)._moveSelection;
       }
       // Handle moving entire canvas content
-      else if (canvas._moveBackup && (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)) {
+      else if ((canvas as any)._moveBackup && (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(canvas._moveBackup, deltaX, deltaY);
+        ctx.drawImage((canvas as any)._moveBackup, deltaX, deltaY);
         console.log('Move tool: moved entire canvas', { deltaX, deltaY });
-        delete canvas._moveBackup;
+        delete (canvas as any)._moveBackup;
       }
       
       // Clean up
@@ -1373,7 +1377,7 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       } catch (e) {
         console.error('Blur error:', e);
         // Fallback: simple blur effect
-        ctx.filter = `blur(${blurRadius}px)`;
+        ctx.filter = `blur(${radius}px)`;
         ctx.globalAlpha = intensity;
         ctx.drawImage(canvas, 0, 0);
         ctx.filter = 'none';
@@ -1977,5 +1981,38 @@ export const toolHandlers: Record<ToolId, ToolHandler> = {
       
       console.log('Zoom: zoomed', { x, y, scale: newScale });
     },
+  },
+
+  // Missing tool handlers with placeholder implementations
+  'quick-select': {
+    onActivate: (canvas) => canvas.style.cursor = 'crosshair',
+    onDeactivate: (canvas) => canvas.style.cursor = 'default',
+    onMouseDown: () => console.log('Quick select: started'),
+    onMouseMove: () => {},
+    onMouseUp: () => console.log('Quick select: ended'),
+  },
+
+  'healing': {
+    onActivate: (canvas) => canvas.style.cursor = 'crosshair',
+    onDeactivate: (canvas) => canvas.style.cursor = 'default',
+    onMouseDown: () => console.log('Healing: started'),
+    onMouseMove: () => {},
+    onMouseUp: () => console.log('Healing: ended'),
+  },
+
+  'text': {
+    onActivate: (canvas) => canvas.style.cursor = 'text',
+    onDeactivate: (canvas) => canvas.style.cursor = 'default',
+    onMouseDown: () => console.log('Text: started'),
+    onMouseMove: () => {},
+    onMouseUp: () => console.log('Text: ended'),
+  },
+
+  'shape': {
+    onActivate: (canvas) => canvas.style.cursor = 'crosshair',
+    onDeactivate: (canvas) => canvas.style.cursor = 'default',
+    onMouseDown: () => console.log('Shape: started'),
+    onMouseMove: () => {},
+    onMouseUp: () => console.log('Shape: ended'),
   },
 };

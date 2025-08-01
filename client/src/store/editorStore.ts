@@ -237,7 +237,6 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   addHistoryStep: (step) => {
     const historyStep: HistoryStep = {
       ...step,
-      id: crypto.randomUUID(),
       timestamp: Date.now(),
     };
     

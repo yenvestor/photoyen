@@ -1,20 +1,20 @@
 export type ToolId = 
   | 'move'
   | 'rectangle-select' | 'ellipse-select' | 'lasso-select'
-  | 'magic-wand' | 'quick-selection' | 'object-selection'
+  | 'magic-wand' | 'quick-selection' | 'quick-select' | 'object-selection'
   | 'crop'
   | 'eyedropper' | 'color-sampler' | 'ruler'
-  | 'spot-healing' | 'healing-brush' | 'patch' | 'red-eye'
+  | 'spot-healing' | 'healing-brush' | 'healing' | 'patch' | 'red-eye'
   | 'brush' | 'pencil' | 'color-replacement'
   | 'clone'
   | 'eraser'
   | 'paint-bucket' | 'gradient'
   | 'blur' | 'sharpen' | 'smudge'
   | 'dodge' | 'burn' | 'sponge'
-  | 'type' | 'vertical-type'
+  | 'type' | 'text' | 'vertical-type'
   | 'pen' | 'free-pen' | 'add-anchor' | 'delete-anchor' | 'convert-anchor'
   | 'path-select' | 'direct-select'
-  | 'rectangle' | 'ellipse' | 'line' | 'parametric-shape' | 'custom-shape'
+  | 'rectangle' | 'ellipse' | 'line' | 'parametric-shape' | 'custom-shape' | 'shape'
   | 'hand' | 'rotate-view'
   | 'zoom';
 
@@ -24,6 +24,18 @@ export interface Tool {
   icon: string;
   shortcut: string;
   category: 'selection' | 'painting' | 'retouching' | 'drawing' | 'navigation' | 'transformation';
+}
+
+export interface MenuItem {
+  label: string;
+  action: () => void;
+  shortcut?: string;
+  submenu?: MenuItem[];
+  checked?: boolean;
+}
+
+export interface MenuSeparator {
+  type: 'separator';
 }
 
 export interface Layer {
@@ -79,7 +91,6 @@ export interface Selection {
 }
 
 export interface HistoryStep {
-  id: string;
   action: string;
   timestamp: number;
   data: any;

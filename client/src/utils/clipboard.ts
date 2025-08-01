@@ -83,14 +83,14 @@ export class CanvasClipboard {
   /**
    * Paste clipboard data to canvas
    */
-  static paste(
+  static async paste(
     canvas: HTMLCanvasElement,
     x?: number,
     y?: number
-  ): boolean {
+  ): Promise<boolean> {
     if (!this.clipboardData) {
       // Try to paste from system clipboard
-      return this.pasteFromSystemClipboard(canvas, x, y);
+      return await this.pasteFromSystemClipboard(canvas, x, y);
     }
 
     const ctx = canvas.getContext('2d');
@@ -117,13 +117,13 @@ export class CanvasClipboard {
   /**
    * Paste and center on canvas
    */
-  static pasteCenter(canvas: HTMLCanvasElement): boolean {
+  static async pasteCenter(canvas: HTMLCanvasElement): Promise<boolean> {
     if (!this.clipboardData) return false;
 
     const centerX = (canvas.width - this.clipboardData.width) / 2;
     const centerY = (canvas.height - this.clipboardData.height) / 2;
 
-    return this.paste(canvas, centerX, centerY);
+    return await this.paste(canvas, centerX, centerY);
   }
 
   /**
@@ -330,7 +330,7 @@ export class CanvasClipboard {
   /**
    * Clear selection or entire canvas
    */
-  static clear(
+  static clearCanvas(
     canvas: HTMLCanvasElement,
     selectionBounds?: { x: number; y: number; width: number; height: number }
   ): void {

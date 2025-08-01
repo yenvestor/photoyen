@@ -200,7 +200,7 @@ export default function RightSidebar() {
       <div className="flex-1 overflow-y-auto">
         {history.slice(-10).map((step, index) => (
           <div 
-            key={step.id}
+            key={index}
             className="flex items-center p-1 hover:bg-tertiary-dark rounded cursor-pointer text-sm"
             onClick={() => {
               // Implement step navigation

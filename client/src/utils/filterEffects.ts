@@ -393,7 +393,7 @@ function gaussianBlurImageData(imageData: ImageData, radius: number): ImageData 
   const height = imageData.height;
 
   // Create gaussian kernel
-  const kernel = [];
+  const kernel: number[] = [];
   const sigma = radius / 3;
   const norm = 1 / (Math.sqrt(2 * Math.PI) * sigma);
   const coeff = -1 / (2 * sigma * sigma);

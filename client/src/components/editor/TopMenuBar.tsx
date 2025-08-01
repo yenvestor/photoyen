@@ -31,23 +31,15 @@ import {
   cropCanvas
 } from '@/utils/transformTools';
 import { CanvasClipboard } from '@/utils/clipboard';
+import { MenuItem, MenuSeparator } from '@/types/editor';
 
-interface MenuItem {
-  label: string;
-  action: () => void;
-  shortcut?: string;
-  checked?: boolean;
-  submenu?: MenuItem[];
-}
-
-interface MenuSeparator {
-  type: 'separator';
-}
+// Helper function to create a separator
+const separator = (): MenuSeparator => ({ type: 'separator' });
 
 interface MenuGroup {
   id: string;
   label: string;
-  items: (MenuItem | MenuSeparator)[];
+  items: any[];
 }
 
 export default function TopMenuBar() {
@@ -57,7 +49,7 @@ export default function TopMenuBar() {
 
   // Helper function to get the active canvas
   const getActiveCanvas = (): HTMLCanvasElement | null => {
-    return document.querySelector('canvas') as HTMLCanvasElement;
+    return window.document.querySelector('canvas') as HTMLCanvasElement;
   };
 
   // Helper function to add history and get canvas
@@ -79,15 +71,10 @@ export default function TopMenuBar() {
     
     // Add to history
     addHistoryStep({
-      id: Date.now().toString(),
       action: 'transform',
-      before: beforeState,
-      after: afterState,
-      timestamp: Date.now()
+      data: { before: beforeState, after: afterState }
     });
   };
-
-  const activeDocument = documents.find(doc => doc.id === activeDocumentId);
 
   const handleNewDocument = () => {
     createDocument('Untitled', 800, 600);
@@ -244,7 +231,7 @@ export default function TopMenuBar() {
         }},
         { label: 'Clear', shortcut: 'Delete', action: () => {
           const canvas = getActiveCanvas();
-          if (canvas) CanvasClipboard.clear(canvas);
+          if (canvas) CanvasClipboard.clearCanvas(canvas);
         }},
         { type: 'separator' },
         { label: 'Fill...', shortcut: 'Shift+F5', action: () => {
@@ -1036,28 +1023,29 @@ export default function TopMenuBar() {
             {openDropdown === menu.id && (
               <div className="absolute top-full left-0 bg-gray-800 border border-gray-600 shadow-lg z-50 min-w-48">
                 {menu.items.map((item, index) => {
-                  if (item.type === 'separator') {
+                  if ('type' in item && item.type === 'separator') {
                     return <hr key={index} className="border-gray-600" />;
                   }
+                  const menuItem = item as MenuItem;
                   return (
                     <div key={index} className="relative group">
                       <button
                         className="block w-full px-3 py-1 text-xs text-left hover:bg-gray-700 flex items-center justify-between text-white"
-                        onClick={item.action}
+                        onClick={menuItem.action}
                       >
-                        <span>{item.label}</span>
+                        <span>{menuItem.label}</span>
                         <div className="flex items-center space-x-2">
-                          {item.shortcut && (
-                            <span className="text-gray-400 text-xs">{item.shortcut}</span>
+                          {menuItem.shortcut && (
+                            <span className="text-gray-400 text-xs">{menuItem.shortcut}</span>
                           )}
-                          {item.submenu && (
+                          {menuItem.submenu && (
                             <i className="fas fa-chevron-right text-xs text-gray-400"></i>
                           )}
                         </div>
                       </button>
-                      {item.submenu && (
+                      {menuItem.submenu && (
                         <div className="absolute left-full top-0 bg-gray-800 border border-gray-600 shadow-lg z-50 min-w-48 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200">
-                          {item.submenu.map((subItem, subIndex) => (
+                          {menuItem.submenu.map((subItem, subIndex) => (
                             <button
                               key={subIndex}
                               className="block w-full px-3 py-1 text-xs text-left hover:bg-gray-700 text-white"
